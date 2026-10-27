@@ -24,8 +24,8 @@ val managerVersionName = rootProject.extra["managerVersionName"] as String
 
 val isPrBuild = project.findProperty("IS_PR_BUILD")?.toString()?.toBoolean() ?: false
 val watchOnly = project.findProperty("KSU_WATCH_ONLY")?.toString()?.toBoolean() ?: false
-val defaultManagerPackageName = if (isPrBuild) "me.weishu.kernelsu.pr" else "me.weishu.kernelsu"
-val defaultManagerName = if (isPrBuild) "KernelSU PR" else "KernelSU"
+val defaultManagerPackageName = if (isPrBuild) "io.github.umislat.kernelsu.pr" else "io.github.umislat.kernelsu"
+val defaultManagerName = if (isPrBuild) "KernelSU Watch PR" else "KernelSU Watch"
 val managerPackageName = project.findProperty("KSU_PACKAGE_NAME")?.toString() ?: defaultManagerPackageName
 val managerName = project.findProperty("KSU_NAME")?.toString() ?: defaultManagerName
 
