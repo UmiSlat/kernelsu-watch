@@ -56,6 +56,10 @@ extern "C" fn sigsys_handler(
             let rax = libc::REG_RAX as usize;
             (*ucontext).uc_mcontext.gregs[rax] = i64::from(-libc::EPERM);
         }
+        #[cfg(target_arch = "arm")]
+        {
+            (*ucontext).uc_mcontext.arm_r0 = (-libc::EPERM) as libc::c_ulong;
+        }
         #[cfg(target_arch = "riscv64")]
         {
             let ucontext = ctx.cast::<ksu_uapi::ucontext_t>();
@@ -116,10 +120,106 @@ pub fn claim_inherited_driver_fd() -> io::Result<()> {
     Ok(())
 }
 
+#[cfg(all(target_os = "android", feature = "watch-fd-broker"))]
+mod watch_fd_broker {
+    use std::os::fd::RawFd;
+    use std::time::Duration;
+
+    const SOCKET_NAME: &[u8] = b"ksu_driver_broker";
+
+    /// Ask the manager process for a duplicate of its real [ksu_driver] fd.
+    ///
+    /// The manager's `libsu` children do not inherit extra file descriptors on
+    /// the watch, so `/proc/self/fd` scanning alone cannot find the fd there.
+    pub fn claim() -> Option<RawFd> {
+        // The broker is started from Application.onCreate; give it a short
+        // window to bind before falling back to the official reboot path.
+        for _ in 0..15 {
+            if let Some(fd) = try_claim() {
+                return Some(fd);
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        None
+    }
+
+    fn try_claim() -> Option<RawFd> {
+        unsafe {
+            let sock = libc::socket(libc::AF_UNIX, libc::SOCK_STREAM | libc::SOCK_CLOEXEC, 0);
+            if sock < 0 {
+                return None;
+            }
+
+            let mut addr: libc::sockaddr_un = std::mem::zeroed();
+            addr.sun_family = libc::AF_UNIX as libc::sa_family_t;
+            addr.sun_path[0] = 0;
+            for (i, byte) in SOCKET_NAME.iter().enumerate() {
+                addr.sun_path[i + 1] = *byte as libc::c_char;
+            }
+            let addr_len = (std::mem::offset_of!(libc::sockaddr_un, sun_path)
+                + 1
+                + SOCKET_NAME.len()) as libc::socklen_t;
+
+            let timeout = libc::timeval {
+                tv_sec: 4,
+                tv_usec: 0,
+            };
+            libc::setsockopt(
+                sock,
+                libc::SOL_SOCKET,
+                libc::SO_RCVTIMEO,
+                (&raw const timeout).cast::<libc::c_void>(),
+                std::mem::size_of::<libc::timeval>() as libc::socklen_t,
+            );
+
+            if libc::connect(sock, (&raw const addr).cast::<libc::sockaddr>(), addr_len) != 0 {
+                libc::close(sock);
+                return None;
+            }
+
+            let mut byte = 0u8;
+            let mut iov = libc::iovec {
+                iov_base: (&raw mut byte).cast::<libc::c_void>(),
+                iov_len: 1,
+            };
+            let mut control = [0u8; 64];
+            let mut msg: libc::msghdr = std::mem::zeroed();
+            msg.msg_iov = &raw mut iov;
+            msg.msg_iovlen = 1;
+            msg.msg_control = control.as_mut_ptr().cast::<libc::c_void>();
+            msg.msg_controllen = control.len() as _;
+
+            let received = libc::recvmsg(sock, &raw mut msg, 0);
+            if received <= 0 {
+                libc::close(sock);
+                return None;
+            }
+
+            let cmsg = libc::CMSG_FIRSTHDR(&raw const msg);
+            if cmsg.is_null()
+                || (*cmsg).cmsg_level != libc::SOL_SOCKET
+                || (*cmsg).cmsg_type != libc::SCM_RIGHTS
+            {
+                libc::close(sock);
+                return None;
+            }
+
+            let fd = std::ptr::read_unaligned(libc::CMSG_DATA(cmsg).cast::<libc::c_int>());
+            libc::close(sock);
+            (fd >= 0).then_some(fd)
+        }
+    }
+}
+
 // Get cached driver fd
 fn init_driver_fd() -> Option<RawFd> {
     let fd = scan_driver_fd().ok().flatten();
     if fd.is_none() {
+        #[cfg(all(target_os = "android", feature = "watch-fd-broker"))]
+        if let Some(broker_fd) = watch_fd_broker::claim() {
+            return Some(broker_fd);
+        }
+
         let mut fd = -1;
         with_svc_call(|| unsafe {
             libc::syscall(

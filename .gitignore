@@ -9,3 +9,10 @@ __pycache__
 /dist
 /repack-config.json
 /userspace/ksud/.lkm_image_bootstrap.o
+
+/gradle-dist/
+/gradle-9.7.1-bin.zip
+/cargo-ndk-*.log
+/gradle-build.log
+/manager/app/src/main/jniLibs/armeabi-v7a/libksud.so
+

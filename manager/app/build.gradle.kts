@@ -23,6 +23,7 @@ val managerVersionCode = rootProject.extra["managerVersionCode"] as Int
 val managerVersionName = rootProject.extra["managerVersionName"] as String
 
 val isPrBuild = project.findProperty("IS_PR_BUILD")?.toString()?.toBoolean() ?: false
+val watchOnly = project.findProperty("KSU_WATCH_ONLY")?.toString()?.toBoolean() ?: false
 val defaultManagerPackageName = if (isPrBuild) "me.weishu.kernelsu.pr" else "me.weishu.kernelsu"
 val defaultManagerName = if (isPrBuild) "KernelSU PR" else "KernelSU"
 val managerPackageName = project.findProperty("KSU_PACKAGE_NAME")?.toString() ?: defaultManagerPackageName
@@ -160,7 +161,11 @@ android {
         }
 
         ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64", "riscv64")
+            if (watchOnly) {
+                abiFilters += "armeabi-v7a"
+            } else {
+                abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64", "riscv64")
+            }
         }
     }
 

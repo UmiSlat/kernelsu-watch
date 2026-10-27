@@ -80,6 +80,7 @@ fun Uri.getFileName(context: Context): String? {
 }
 
 fun createRootShell(globalMnt: Boolean = false): Shell {
+    DriverFdBroker.ensureStarted()
     Shell.enableVerboseLogging = BuildConfig.DEBUG
     val builder = Shell.Builder.create()
     return try {
