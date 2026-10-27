@@ -71,10 +71,34 @@ per-boot prerequisite.
   - `cargo ndk -t armeabi-v7a -P 31 build --release --features watch-fd-broker`
   - manager APK built with `-PKSU_WATCH_ONLY=true`.
 - **M2** fd broker - implemented in Kotlin and Rust; compiles and passes clippy.
-- **M3** on-watch integration test - **not yet installed**; see the signing
-  caveat below.
+- **M3** on-watch integration test - core path passed (2026-10-27):
+  - old manager uninstalled, new APK installed
+  - UID changed from 10096 to **10137**; the driver crowned it automatically
+  - `runas 10137 /data/local/tmp/ksud_armv7 debug info` -> `flags: 0x7`
+  - app pid 25922 had fd 66/71/80 -> `[ksu_driver]`
+  - two `sh` children (25948, 25956) ran as **root**
+  - no new SIGSYS after the broker path; the old 19:48 crash is from the old APK
+  - `MainActivity` was created but sleeping behind keyguard; visual check pending
 - **M4** real `5.15.137` LKM - blocked on kernel source/config/Module.symvers.
 - **M5** signing decision - pending.
+
+## Live install result (2026-10-27)
+
+- Package: `me.weishu.kernelsu`, UID **10137** (was 10096)
+- Driver log: `Crowning manager: uid=10137`
+- App process had three `[ksu_driver]` fds (66/71/80); the watcher re-injected
+  once during startup
+- `libksud.so debug su` produced two root `sh` children (25948, 25956)
+- No new `SIGSYS 88` after the broker path; the only crash in `logcat -b crash`
+  is the old 19:48 crash from the previous APK
+- The activity was created but the watch was on keyguard, so the final Home /
+  module / superuser screenshots are still pending an unlock
+
+Rollback material is in `D:\smallprojects\watch5-rollback\`:
+
+- `kernelsu-old.apk` (old manager, SHA-256 `d3a813af...`)
+- `kernelsu-watch-debug.apk` (new manager)
+- `ksu_manager_data_20261027.tar` (old app data, 8 KiB)
 
 ## Build (Windows, verified)
 
@@ -168,6 +192,7 @@ Do not replace the working manager on the current boot without a rollback plan.
 
 - Watch kernel source, `.config` and `Module.symvers` for `5.15.137`
 - Decision on the manager signer and the corresponding LKM trust policy
-- On-device confirmation that `LocalServerSocket(String)` uses the abstract
-  namespace expected by the Rust client
+- Watcher injected the fd twice for pid 25922 during startup; harmless, but the
+  watcher should deduplicate a transient "app gone" state
+- Final Home / module / superuser screenshots pending watch unlock
 - Whether to keep `targetSdk 37` or lower to 34/36 for the watch
