@@ -160,7 +160,7 @@ side by side with the current working manager.  However:
 
 ## Rollback material
 
-`D:\smallprojects\watch5-rollback\`:
+Local rollback material (not tracked in this repository):
 
 - `kernelsu-old.apk` (original manager, SHA-256 `d3a813af...`)
 - `kernelsu-watch-debug.apk` (temporary-package test build)
