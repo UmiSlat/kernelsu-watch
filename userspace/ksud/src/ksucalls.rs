@@ -125,17 +125,16 @@ mod watch_fd_broker {
     use std::os::fd::RawFd;
     use std::time::Duration;
 
-    const SOCKET_NAME: &[u8] = b"ksu_driver_broker";
-
     /// Ask the manager process for a duplicate of its real [ksu_driver] fd.
     ///
     /// The manager's `libsu` children do not inherit extra file descriptors on
     /// the watch, so `/proc/self/fd` scanning alone cannot find the fd there.
     pub fn claim() -> Option<RawFd> {
+        let socket_name = format!("ksu_driver_broker.{}", env!("KSU_PACKAGE_NAME"));
         // The broker is started from Application.onCreate; give it a short
         // window to bind before falling back to the official reboot path.
         for _ in 0..15 {
-            if let Some(fd) = try_claim() {
+            if let Some(fd) = try_claim(socket_name.as_bytes()) {
                 return Some(fd);
             }
             std::thread::sleep(Duration::from_millis(100));
@@ -143,7 +142,7 @@ mod watch_fd_broker {
         None
     }
 
-    fn try_claim() -> Option<RawFd> {
+    fn try_claim(socket_name: &[u8]) -> Option<RawFd> {
         unsafe {
             let sock = libc::socket(libc::AF_UNIX, libc::SOCK_STREAM | libc::SOCK_CLOEXEC, 0);
             if sock < 0 {
@@ -153,12 +152,12 @@ mod watch_fd_broker {
             let mut addr: libc::sockaddr_un = std::mem::zeroed();
             addr.sun_family = libc::AF_UNIX as libc::sa_family_t;
             addr.sun_path[0] = 0;
-            for (i, byte) in SOCKET_NAME.iter().enumerate() {
+            for (i, byte) in socket_name.iter().enumerate() {
                 addr.sun_path[i + 1] = *byte as libc::c_char;
             }
             let addr_len = (std::mem::offset_of!(libc::sockaddr_un, sun_path)
                 + 1
-                + SOCKET_NAME.len()) as libc::socklen_t;
+                + socket_name.len()) as libc::socklen_t;
 
             let timeout = libc::timeval {
                 tv_sec: 4,

@@ -21,8 +21,18 @@ Repository: `https://github.com/UmiSlat/kernelsu-watch`
 - Repository: **`kernelsu-watch`**
 
 The reverse-DNS name is based on the GitHub account (`UmiSlat`, lowercased) and
-does not collide with the official `me.weishu.kernelsu`.  The Kotlin namespace
-stays `me.weishu.kernelsu`; only the installed application ID and label change.
+does not collide with the official KernelSU manager.  The fork uses the new
+namespace everywhere:
+
+- Kotlin/Java package: `io.github.umislat.kernelsu`
+- AIDL package: `io.github.umislat.kernelsu.IKsuInterface`
+- JNI symbols: `Java_io_github_umislat_kernelsu_*`
+- Manifest components, permissions, task affinity and authorities:
+  `io.github.umislat.kernelsu.*`
+- Kernel `Kbuild` / `ksud` default manager package:
+  `io.github.umislat.kernelsu`
+- Broker socket: `@ksu_driver_broker.<applicationId>` (package-specific, so
+  this app and the official manager can coexist)
 
 ## Findings that drive the design
 
@@ -76,8 +86,7 @@ prerequisite.
 - **M1** armv7 build - done.
 - **M2** fd broker - implemented; Rust and Kotlin compile.
 - **M3** on-device core path - passed with a temporary package name:
-  - old manager was replaced by a test build with application ID
-    `me.weishu.kernelsu`
+  - the old manager was replaced by a temporary test build
   - UID changed from 10096 to 10137; the driver crowned the new UID
   - `runas 10137 ksud debug info` -> `flags: 0x7`
   - the app had fd 66/71/80 -> `[ksu_driver]`
@@ -85,8 +94,16 @@ prerequisite.
   - no new `SIGSYS 88`; the broker path works
   - the activity was created but the watch was locked, so final screenshots
     are still pending
-- The repository now defaults to `io.github.umislat.kernelsu`; this new package
-  has been built but **not installed** yet.
+- **M3b** full namespace build - installed side by side:
+  - application ID, Kotlin/Java package, AIDL, JNI symbols, manifest and kernel
+    `KSU_PACKAGE_NAME` all use `io.github.umislat.kernelsu`
+  - installed as UID 10139; `MainActivity` launched without
+    `UnsatisfiedLinkError`, `ClassNotFoundException` or AIDL failures
+  - broker socket is now package-specific
+    (`@ksu_driver_broker.<applicationId>`), so the new app and the old
+    temporary manager coexist without an address conflict
+  - the new app has **no driver fd yet** because the lab watcher still targets
+    the old package; root-shell testing for this package is pending
 - **M4** real `5.15.137` LKM - blocked on kernel source/config/Module.symvers.
 - **M5** signing decision - pending.
 
@@ -126,11 +143,12 @@ Set-Location manager
 
 Current artifact:
 
-- `manager/app/build/outputs/apk/debug/KernelSU_Watch_e7443f4_30003-debug.apk`
-  (30,944,358 bytes)
+- `manager/app/build/outputs/apk/debug/KernelSU_Watch_33716c6_30005-debug.apk`
+  (33,095,565 bytes)
 - application ID `io.github.umislat.kernelsu`
 - label `KernelSU Watch`
 - only `lib/armeabi-v7a/`: `libadbroot.so`, `libkernelsu.so`, `libksud.so`
+- JNI symbols: `Java_io_github_umislat_kernelsu_*`
 - signer: local Android debug key
   `3BF1577C690A4A57534AFE7338B9534FDBA659DEEDCE1E6F3ED408AE750545DC`
 
@@ -146,8 +164,10 @@ cargo fmt --check                                                   PASS
 
 ## Install caveat
 
-The new package is separate from `me.weishu.kernelsu`, so it can be installed
-side by side with the current working manager.  However:
+The new package is separate from the temporary test manager, so it can be
+installed side by side with the current working manager.  It is currently
+installed as UID 10139, but has no driver fd because the lab watcher still
+targets the old package.  However:
 
 - the lab watcher currently targets the old package; it must target
   `io.github.umislat.kernelsu` (or both packages) before the new app can receive
